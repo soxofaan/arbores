@@ -2,14 +2,15 @@
 
 import argparse
 import contextlib
+import fnmatch
 import json
 import logging
 import os
+import re
 import sys
-from fnmatch import fnmatch
 from json.encoder import encode_basestring_ascii as str_encode
 from pathlib import Path
-from typing import Callable, Set
+from typing import Callable, List
 
 log = logging.getLogger('scan')
 
@@ -27,11 +28,16 @@ def main():
         'dir', metavar='DIR', nargs='?', default='.',
         help="Directory to scan. Current directory by default."
     )
+    skip_help = "Directory path patterns to skip (can be supplied multiple times)." \
+                " Supports Unix shell-style wildcards like '*' and '?'." \
+                " For ease of use: if pattern doesn't start with '*', '?' or '/'," \
+                " the pattern is automatically prepended with '*/'." \
+                " Examples: '.git': skip all directories with basename '.git'," \
+                " '/home/john/tmp': skip this particular directory," \
+                " '*temp*': skip all folders having 'temp' in their name."
     scan_command.add_argument(
         '-s', '--skip', action='append', default=[],
-        help="Directory name to skip, e.g. '.git' or '.Trash'. "
-             "Unix shell-style wildcards like '*' and '?' are supported. "
-             "Can be supplied multiple times."
+        help=skip_help
     )
 
     # Sub-command "compare"
@@ -42,11 +48,26 @@ def main():
     compare_command.add_argument(
         'dumps', metavar='DUMP', nargs=2, help='Dumps to compare'
     )
+    compare_command.add_argument(
+        '-s', '--skip', action='append', default=[],
+        help=skip_help
+    )
 
     arguments = cli.parse_args()
     if not hasattr(arguments, 'func'):
         return cli.print_help()
     arguments.func(arguments)
+
+
+def get_skip_checker(skip_list: List[str]) -> Callable[[str], bool]:
+    """Build function to check whether to skip a path, given list of path patterns."""
+    matchers = []
+    for p in set(skip_list):
+        if p[:1] not in ('*', '?', '/'):
+            p = '*/' + p
+        matchers.append(re.compile(fnmatch.translate(p), flags=re.IGNORECASE).match)
+
+    return lambda path: any(match(path) for match in matchers)
 
 
 def scan_main(arguments: argparse.Namespace):
@@ -55,18 +76,17 @@ def scan_main(arguments: argparse.Namespace):
     :param arguments: command line arguments
     """
     path = Path(arguments.dir)
-    dirs_to_skip = set(arguments.skip)
+    skip_check = get_skip_checker(arguments.skip)
     output = sys.stdout.write
     with wrap(output, f'{{{str_encode(str(path))}:', '}'):
-        _scan(path, output=output, prefix='', dirs_to_skip=dirs_to_skip)
+        _scan(path, output=output, prefix='', skip_check=skip_check)
 
 
 def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: str = ' ',
-          dirs_to_skip: Set[str] = None):
+          skip_check: Callable[[str], bool] = lambda path: False):
     """
     Scan given path and write file/directory representation in JSON format to output
     """
-    dirs_to_skip = dirs_to_skip or set()
 
     # Handle unreadable directory.
     try:
@@ -91,11 +111,11 @@ def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: s
             elif x.is_file():
                 add_item(f'{name}:{x.stat().st_size}')
             elif x.is_dir():
-                if any(fnmatch(x.name, p) for p in dirs_to_skip):
+                if skip_check(x.path):
                     add_item(f'{name}:"<skip>"')
                 else:
                     add_item(f'{name}:')
-                    _scan(x.path, output=output, prefix=prefix + indent, dirs_to_skip=dirs_to_skip)
+                    _scan(x.path, output=output, prefix=prefix + indent, skip_check=skip_check)
             else:
                 log.warning(f'Skipping {x.path}')
 
@@ -107,22 +127,23 @@ def wrap(output, before: str, after: str):
     output(after)
 
 
-def compare_main(arguments):
+def compare_main(arguments: argparse.Namespace):
+    """
+    Main function for the "compare" command
+    :param arguments:
+    """
     # TODO options to skip dirs
     dump_a, dump_b = arguments.dumps
     with open(dump_a) as f:
         tree_a = json.load(f)
     with open(dump_b) as f:
         tree_b = json.load(f)
-
-    compare(tree_a, tree_b)
-
-
-def _report(path, a, b):
-    print(f'{a:^12s} {b:^12s} {path}')
+    skip_check = get_skip_checker(arguments.skip)
+    compare(tree_a, tree_b, skip_check=skip_check)
 
 
-def compare(a: dict, b: dict, prefix: str = ''):
+def compare(a: dict, b: dict, prefix: str = '',
+            skip_check: Callable[[str], bool] = lambda path: False):
     a_keys = set(a.keys())
     b_keys = set(b.keys())
     only_a = a_keys.difference(b_keys)
@@ -131,33 +152,39 @@ def compare(a: dict, b: dict, prefix: str = ''):
 
     prefix = prefix.rstrip('/')
     if prefix:
-        def _path(name):
+        def full_path(name):
             return f'{prefix}/{name}'
     else:
-        def _path(name):
+        def full_path(name):
             return name
 
+    def report(path, a, b):
+        print(f'{a:^12s} {b:^12s} {path}')
+
     for k in only_a:
-        _report(_path(k), '', 'n/a')
+        report(full_path(k), '', 'n/a')
     for k in only_b:
-        _report(_path(k), 'n/a', '')
+        report(full_path(k), 'n/a', '')
 
     for k in both:
         a_k = a[k]
         b_k = b[k]
+        path = full_path(k)
+        if skip_check(path):
+            continue
         if isinstance(a_k, dict):
             if isinstance(b_k, dict):
                 # Recurse
-                compare(a_k, b_k, prefix=_path(k))
+                compare(a_k, b_k, prefix=path, skip_check=skip_check)
             else:
-                _report(_path(k), 'dir', 'file')
+                report(path, 'dir', 'not dir')
         else:
             if isinstance(b_k, dict):
-                _report(_path(k), 'file', 'dir')
+                report(path, 'not dir', 'dir')
             else:
                 # File compare
                 if a_k != b_k:
-                    _report(_path(k), f'{a_k}b', f'{b_k}b')
+                    report(path, f'{a_k}b', f'{b_k}b')
 
 
 if __name__ == '__main__':

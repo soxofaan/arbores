@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+
 import argparse
 import contextlib
 import json
 import logging
 import os
 import sys
+from fnmatch import fnmatch
 from json.encoder import encode_basestring_ascii as str_encode
 from pathlib import Path
 from typing import Callable, Set
@@ -14,28 +16,27 @@ log = logging.getLogger('scan')
 
 def main():
     cli = argparse.ArgumentParser()
-
     subcommands = cli.add_subparsers(help='Sub-command')
 
-    # Scan sub-command
+    # Sub-command "scan"
     scan_command = subcommands.add_parser(
-        'scan',
-        help='Scan directory contents and dump as JSON.'
+        'scan', help='Scan directory contents and dump as JSON.'
     )
     scan_command.set_defaults(func=scan_main)
     scan_command.add_argument(
         'dir', metavar='DIR', nargs='?', default='.',
-        help="Directory to scan."
+        help="Directory to scan. Current directory by default."
     )
     scan_command.add_argument(
-        '--skip', action='append', default=[],
-        help="Directory names to skip, e.g. '.git'"
+        '-s', '--skip', action='append', default=[],
+        help="Directory name to skip, e.g. '.git' or '.Trash'. "
+             "Unix shell-style wildcards like '*' and '?' are supported. "
+             "Can be supplied multiple times."
     )
 
-    # Compare sub-command
+    # Sub-command "compare"
     compare_command = subcommands.add_parser(
-        'compare',
-        help='Compare two directory scan dumps'
+        'compare', help='Compare two directory scan dumps'
     )
     compare_command.set_defaults(func=compare_main)
     compare_command.add_argument(
@@ -43,14 +44,16 @@ def main():
     )
 
     arguments = cli.parse_args()
-    try:
-        func = arguments.func
-    except AttributeError:
-        return cli.error('No sub-command given')
-    func(arguments)
+    if not hasattr(arguments, 'func'):
+        return cli.print_help()
+    arguments.func(arguments)
 
 
-def scan_main(arguments):
+def scan_main(arguments: argparse.Namespace):
+    """
+    Main function for the "scan" command
+    :param arguments: command line arguments
+    """
     path = Path(arguments.dir)
     dirs_to_skip = set(arguments.skip)
     output = sys.stdout.write
@@ -61,14 +64,14 @@ def scan_main(arguments):
 def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: str = ' ',
           dirs_to_skip: Set[str] = None):
     """
-    Scan given path and generate file/directory representation in JSON format
+    Scan given path and write file/directory representation in JSON format to output
     """
     dirs_to_skip = dirs_to_skip or set()
 
     # Handle unreadable directory.
     try:
         listing = os.scandir(path)
-    except PermissionError as e:
+    except PermissionError:
         output('"<permissionerror>"')
         return
 
@@ -82,15 +85,16 @@ def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: s
 
     with wrap(output, "{", "}"):
         for x in listing:
+            name = str_encode(x.name)
             if x.is_symlink():
-                pass
+                add_item(f'{name}:"<symlink>"')
             elif x.is_file():
-                add_item(f'{str_encode(x.name)}:{x.stat().st_size}')
+                add_item(f'{name}:{x.stat().st_size}')
             elif x.is_dir():
-                if x.name in dirs_to_skip:
-                    add_item(f'{str_encode(x.name)}:"<skip>"')
+                if any(fnmatch(x.name, p) for p in dirs_to_skip):
+                    add_item(f'{name}:"<skip>"')
                 else:
-                    add_item(f'{str_encode(x.name)}:')
+                    add_item(f'{name}:')
                     _scan(x.path, output=output, prefix=prefix + indent, dirs_to_skip=dirs_to_skip)
             else:
                 log.warning(f'Skipping {x.path}')

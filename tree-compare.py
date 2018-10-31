@@ -78,6 +78,7 @@ def scan_main(arguments: argparse.Namespace):
     path = Path(arguments.dir)
     skip_check = get_skip_checker(arguments.skip)
     output = sys.stdout.write
+    # Top dictionary hase just one item with root path as key.
     with wrap(output, f'{{{str_encode(str(path))}:', '}'):
         _scan(path, output=output, prefix='', skip_check=skip_check)
 
@@ -133,6 +134,7 @@ def compare_main(arguments: argparse.Namespace):
     :param arguments:
     """
     # TODO options to skip dirs
+    # TODO Relative path mode
     dump_a, dump_b = arguments.dumps
     with open(dump_a) as f:
         tree_a = json.load(f)

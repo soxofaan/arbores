@@ -183,6 +183,7 @@ def compare(a: dict, b: dict, prefix: str = '',
         path = full_path(k)
         if skip_check(path):
             continue
+        # TODO: handle a '<skip>' still as directory
         if isinstance(a_k, dict):
             if isinstance(b_k, dict):
                 # Recurse

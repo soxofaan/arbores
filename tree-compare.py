@@ -52,6 +52,11 @@ def main():
         '-s', '--skip', action='append', default=[],
         help=skip_help
     )
+    compare_command.add_argument(
+        '--relative', action='store_true', default=False,
+        help='Work with relative paths from the scan root.'
+             ' Note that --skip options should also be specified in relative fashion'
+    )
 
     arguments = cli.parse_args()
     if not hasattr(arguments, 'func'):
@@ -133,14 +138,18 @@ def compare_main(arguments: argparse.Namespace):
     Main function for the "compare" command
     :param arguments:
     """
-    # TODO options to skip dirs
-    # TODO Relative path mode
     dump_a, dump_b = arguments.dumps
     with open(dump_a) as f:
         tree_a = json.load(f)
     with open(dump_b) as f:
         tree_b = json.load(f)
     skip_check = get_skip_checker(arguments.skip)
+    if arguments.relative:
+        # Ignore scan root at top level dictionary (which should be only item).
+        k, = tree_a.keys()
+        tree_a = tree_a[k]
+        k, = tree_b.keys()
+        tree_b = tree_b[k]
     compare(tree_a, tree_b, skip_check=skip_check)
 
 

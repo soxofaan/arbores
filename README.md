@@ -22,6 +22,8 @@ missing or different? This tool tries to help.
 
 ## Usage example
 
+The basic usage is as follows
+
 1. Do a `scan` of the desired directory, dumping to a JSON file
 
         python3 tree-compare.py scan /path/to/folder > dump1.json
@@ -32,13 +34,41 @@ missing or different? This tool tries to help.
 
         python3 tree-compare.py compare dump1.json dump2.json
 
+   Which results in something like
+   
+        n/a                   bar/bo
+         6b          12b      bar/lorem.txt
+                     n/a      bar/baz/lorem.txt
+        dir        not dir    foo
+   
+   In this example: `bar/bo` is missing from first tree, 
+   `bar/baz/lorem.txt` is missing from the second, 
+   `bar/lorem.txt` differs in size
+   and `foo` is a directory in the first tree but not in the second 
+   (e.g. a file instead). 
+ 
 
-During `scan` or `compare` it's possible to skip parts of the tree by adding the `--skip`/`-s` option. 
-Some examples:
-    
-    # Skip folders with specific (base)names:
-    --skip .git --skip .Trash
-    # Skip folders with 'temp' in their name: 
-    --skip '*temp*'
-    # Skip specific folder
-    --skip /home/john/Dropbox
+### Options and finetuning
+
+- During `scan` or `compare` it is possible to skip parts of the trees by adding the `--skip`/`-s` option. 
+  Some examples:
+
+        # Skip folders with specific (base)names:
+        --skip .git --skip .Trash
+        # Skip folders with 'temp' in their name: 
+        --skip '*temp*'
+        # Skip specific folder
+        --skip /home/john/Dropbox
+
+  Note that `scan` typically takes longer than `compare`, 
+  so it is recommended to experiment with `--skip` during `compare` phase. 
+
+- If you want to compare different directories or scan roots within same file system
+  (as opposed to same scan roots in separate file systems), you want to compare 
+  relative paths from these scan roots. When doing `compare` add option:
+   
+        --relative
+  
+  Note that this also impacts the `--skip` option. 
+
+

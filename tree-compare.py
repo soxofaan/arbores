@@ -118,14 +118,15 @@ def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: s
         for x in listing:
             name = str_encode(x.name)
             if x.is_symlink():
-                add_item(f'{name}:"<symlink>"')
+                # TODO add target of symlink
+                add_item(f'{name}:"symlink"')
             elif x.is_file():
                 add_item(f'{name}:{x.stat().st_size}')
             elif x.is_dir():
                 if max_depth is not None and max_depth <= 0:
-                    add_item(f'{name}:"<skip>"')
+                    add_item(f'{name}:"unlisted dir"')
                 elif skip_check(x.path):
-                    add_item(f'{name}:"<skip>"')
+                    add_item(f'{name}:"skipped dir"')
                 else:
                     add_item(f'{name}:')
                     _scan(
@@ -179,6 +180,16 @@ def compare(a: dict, b: dict, prefix: str = '',
         def full_path(name):
             return name
 
+    def get_type(x):
+        if isinstance(x, dict):
+            return 'dir'
+        elif isinstance(x, int):
+            return 'file'
+        elif isinstance(x, str):
+            return x
+        else:
+            raise ValueError(x)
+
     def report(path, a, b):
         print(f'{a:^12s} {b:^12s} {path}')
 
@@ -193,20 +204,19 @@ def compare(a: dict, b: dict, prefix: str = '',
         path = full_path(k)
         if skip_check(path):
             continue
-        # TODO: handle a '<skip>' still as directory
-        if isinstance(a_k, dict):
-            if isinstance(b_k, dict):
-                # Recurse
-                compare(a_k, b_k, prefix=path, skip_check=skip_check)
-            else:
-                report(path, 'dir', 'not dir')
+        if isinstance(a_k, dict) and isinstance(b_k, dict):
+            # Two dirs: recurse
+            compare(a_k, b_k, prefix=path, skip_check=skip_check)
+        elif isinstance(a_k, int) and isinstance(b_k, int):
+            # Two files: size compare
+            if a_k != b_k:
+                report(path, f'{a_k}b', f'{b_k}b')
         else:
-            if isinstance(b_k, dict):
-                report(path, 'not dir', 'dir')
-            else:
-                # File compare
-                if a_k != b_k:
-                    report(path, f'{a_k}b', f'{b_k}b')
+            # All other cases: compare types
+            a_type = get_type(a_k)
+            b_type = get_type(b_k)
+            if a_type != b_type:
+                report(path, a_type, b_type)
 
 
 if __name__ == '__main__':

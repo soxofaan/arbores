@@ -39,6 +39,10 @@ def main():
         '-s', '--skip', action='append', default=[],
         help=skip_help
     )
+    scan_command.add_argument(
+        '-d', '--depth', type=int, default=None,
+        help="Maximum directory recursion depth."
+    )
 
     # Sub-command "compare"
     compare_command = subcommands.add_parser(
@@ -82,14 +86,15 @@ def scan_main(arguments: argparse.Namespace):
     """
     path = Path(arguments.dir)
     skip_check = get_skip_checker(arguments.skip)
+    max_depth = arguments.depth
     output = sys.stdout.write
     # Top dictionary hase just one item with root path as key.
     with wrap(output, f'{{{str_encode(str(path))}:', '}'):
-        _scan(path, output=output, prefix='', skip_check=skip_check)
+        _scan(path, output=output, prefix='', skip_check=skip_check, max_depth=max_depth)
 
 
 def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: str = ' ',
-          skip_check: Callable[[str], bool] = lambda path: False):
+          skip_check: Callable[[str], bool] = lambda path: False, max_depth: int = None):
     """
     Scan given path and write file/directory representation in JSON format to output
     """
@@ -117,11 +122,16 @@ def _scan(path: Path, output: Callable[[str], None], prefix: str = '', indent: s
             elif x.is_file():
                 add_item(f'{name}:{x.stat().st_size}')
             elif x.is_dir():
-                if skip_check(x.path):
+                if max_depth is not None and max_depth <= 0:
+                    add_item(f'{name}:"<skip>"')
+                elif skip_check(x.path):
                     add_item(f'{name}:"<skip>"')
                 else:
                     add_item(f'{name}:')
-                    _scan(x.path, output=output, prefix=prefix + indent, skip_check=skip_check)
+                    _scan(
+                        x.path, output=output, prefix=prefix + indent, skip_check=skip_check,
+                        max_depth=None if max_depth is None else max_depth - 1
+                    )
             else:
                 log.warning(f'Skipping {x.path}')
 

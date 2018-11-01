@@ -166,12 +166,6 @@ def compare_main(arguments: argparse.Namespace):
 
 def compare(a: dict, b: dict, prefix: str = '',
             skip_check: Callable[[str], bool] = lambda path: False):
-    a_keys = set(a.keys())
-    b_keys = set(b.keys())
-    only_a = a_keys.difference(b_keys)
-    only_b = b_keys.difference(a_keys)
-    both = a_keys.intersection(b_keys)
-
     prefix = prefix.rstrip('/')
     if prefix:
         def full_path(name):
@@ -193,30 +187,30 @@ def compare(a: dict, b: dict, prefix: str = '',
     def report(path, a, b):
         print(f'{a:^12s} {b:^12s} {path}')
 
-    for k in only_a:
-        report(full_path(k), '', 'n/a')
-    for k in only_b:
-        report(full_path(k), 'n/a', '')
-
-    for k in both:
-        a_k = a[k]
-        b_k = b[k]
-        path = full_path(k)
-        if skip_check(path):
-            continue
-        if isinstance(a_k, dict) and isinstance(b_k, dict):
-            # Two dirs: recurse
-            compare(a_k, b_k, prefix=path, skip_check=skip_check)
-        elif isinstance(a_k, int) and isinstance(b_k, int):
-            # Two files: size compare
-            if a_k != b_k:
-                report(path, f'{a_k}b', f'{b_k}b')
+    for k in sorted(set(a.keys()) | set(b.keys())):
+        if k not in b:
+            report(full_path(k), get_type(a[k]), 'n/a')
+        elif k not in a:
+            report(full_path(k), 'n/a', get_type(b[k]))
         else:
-            # All other cases: compare types
-            a_type = get_type(a_k)
-            b_type = get_type(b_k)
-            if a_type != b_type:
-                report(path, a_type, b_type)
+            a_k = a[k]
+            b_k = b[k]
+            path = full_path(k)
+            if skip_check(path):
+                continue
+            if isinstance(a_k, dict) and isinstance(b_k, dict):
+                # Two dirs: recurse
+                compare(a_k, b_k, prefix=path, skip_check=skip_check)
+            elif isinstance(a_k, int) and isinstance(b_k, int):
+                # Two files: size compare
+                if a_k != b_k:
+                    report(path, f'{a_k}b', f'{b_k}b')
+            else:
+                # All other cases: compare types
+                a_type = get_type(a_k)
+                b_type = get_type(b_k)
+                if a_type != b_type:
+                    report(path, a_type, b_type)
 
 
 if __name__ == '__main__':

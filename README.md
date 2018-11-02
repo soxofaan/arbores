@@ -26,13 +26,13 @@ The basic usage is as follows
 
 1. Do a `scan` of the desired directory, dumping to a JSON file
 
-        python3 tree-compare.py scan /path/to/folder > dump1.json
+        python3 treecompare.py scan /path/to/folder > dump1.json
 
    Do this for each file system tree you want to compare. 
 
 2. Collect the dump files and `compare`:
 
-        python3 tree-compare.py compare dump1.json dump2.json
+        python3 treecompare.py compare dump1.json dump2.json
 
    Which results in something like
    

@@ -3,7 +3,6 @@
 import argparse
 import contextlib
 import fnmatch
-import functools
 import json
 import logging
 import os
@@ -194,19 +193,17 @@ class Comparer(object):
             raise ValueError(x)
 
     def compare(self, a: dict, b: dict, prefix: str = ''):
-        full_path = functools.partial(os.path.join, prefix)
-
         for k in sorted(set(a.keys()) | set(b.keys())):
+            path = os.path.join(prefix, k)
+            if self.skip_check(path):
+                continue
             if k not in b:
-                self._report(full_path(k), self._item_type(a[k]), 'n/a')
+                self._report(path, self._item_type(a[k]), 'n/a')
             elif k not in a:
-                self._report(full_path(k), 'n/a', self._item_type(b[k]))
+                self._report(path, 'n/a', self._item_type(b[k]))
             else:
                 a_k = a[k]
                 b_k = b[k]
-                path = full_path(k)
-                if self.skip_check(path):
-                    continue
                 if isinstance(a_k, dict) and isinstance(b_k, dict):
                     # Two dirs: recurse
                     self.compare(a_k, b_k, prefix=path)
